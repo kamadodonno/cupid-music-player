@@ -172,3 +172,4 @@ cp -r "out/mac-arm64/Cupid Player.app" /Applications/
 - **CSS** — custom properties for theming, calc-based responsive scaling
 - **Node.js** — main process (JWT generation, yt-dlp execution)
 - **jsonwebtoken** — Apple Music developer token generation
+"# cupid-player-android" 
