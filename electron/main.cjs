@@ -440,7 +440,11 @@ function createWindow() {
         });
         authWin.loadURL(url);
         const handleAuthRedirect = (event, callbackUrl) => {
-          if (callbackUrl.startsWith('http://127.0.0.1:5173/callback')) {
+          if (
+            callbackUrl.startsWith('http://127.0.0.1:5173/callback') ||
+            callbackUrl.startsWith('http://localhost:5173/callback') ||
+            callbackUrl.startsWith('com.mehul.cupidplayer://callback')
+          ) {
             event.preventDefault();
             const url = new URL(callbackUrl);
             let target;

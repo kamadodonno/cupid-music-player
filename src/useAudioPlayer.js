@@ -11,7 +11,10 @@ export default function useAudioPlayer(tracks, playMode = 'normal', getAudioPath
   const audioRef = useRef(new Audio());
   const playModeRef = useRef(playMode);
   playModeRef.current = playMode;
-  const [trackIndex, setTrackIndex] = useState(0);
+  const [trackIndex, setTrackIndex] = useState(() => {
+  const saved = localStorage.getItem('cupid-track-index');
+  return saved ? parseInt(saved, 10) : 0;
+});
 
   // Reset index when the playlist array changes (mirrors useSpotifyPlayer)
   const prevTracksRef = useRef(tracks);
@@ -31,6 +34,27 @@ export default function useAudioPlayer(tracks, playMode = 'normal', getAudioPath
     return saved !== null ? parseFloat(saved) : 1;
   });
   const [muted, setMuted] = useState(false);
+  useEffect(() => {
+  localStorage.setItem(
+    'cupid-track-index',
+    String(trackIndex)
+  );
+}, [trackIndex]);
+
+useEffect(() => {
+
+  const id = setInterval(() => {
+
+    localStorage.setItem(
+      'cupid-position',
+      String(audio.currentTime || 0)
+    );
+
+  }, 1000);
+
+  return () => clearInterval(id);
+
+}, []);  
 
   const track = tracks[trackIndex] ?? { title: 'No track', artist: '', file: '', art: null };
   const audio = audioRef.current;
@@ -48,17 +72,46 @@ export default function useAudioPlayer(tracks, playMode = 'normal', getAudioPath
         src = await getAudioPath(t.file);
       } else {
         // Browser/preview fallback — Vite serves audio/ as publicDir
-        src = `./${t.file}`;
+        src =
+          t.file.startsWith('blob:') ||
+          t.file.startsWith('content://')
+            ? t.file
+            : `/${t.file}`;
       }
       if (cancelled || !src) return;
       audio.src = src;
-      audio.load();
+audio.load();
+
+const savedTrack =
+  parseInt(localStorage.getItem('cupid-track-index') || '0');
+
+const savedPosition =
+  savedTrack === trackIndex
+    ? parseFloat(localStorage.getItem('cupid-position') || '0')
+    : 0;
+
+audio.addEventListener(
+  'loadedmetadata',
+  () => {
+    audio.currentTime = savedPosition;
+  },
+  { once: true }
+);
+
       setProgress(0);
       setCurrentTime(0);
       setDuration(0);
       if (isPlayingRef.current) {
-        audio.play().catch(() => {});
-      }
+
+  audio.addEventListener(
+    'canplaythrough',
+    () => {
+      audio.play().catch(console.error);
+    },
+    { once: true }
+  );
+
+}
     })();
 
     return () => { cancelled = true; };
@@ -78,25 +131,42 @@ export default function useAudioPlayer(tracks, playMode = 'normal', getAudioPath
     };
 
     const onEnded = () => {
-      if (playModeRef.current === 'repeat') {
-        audio.currentTime = 0;
-        audio.play().catch(() => {});
-        return;
-      }
-      setTrackIndex((prev) => {
-        if (tracks.length === 0) return 0;
-        if (playModeRef.current === 'shuffle') {
-          let next;
-          do { next = Math.floor(Math.random() * tracks.length); } while (next === prev && tracks.length > 1);
-          return next;
-        }
-        return (prev + 1) % tracks.length;
-      });
+
+      audio.currentTime = 0;
+
+      localStorage.setItem(
+        'cupid-position',
+        '0'
+      );
+
+      setTrackIndex(
+        prev => (prev + 1) % tracks.length
+      );
+
     };
 
     audio.addEventListener('timeupdate', onTimeUpdate);
     audio.addEventListener('loadedmetadata', onLoadedMetadata);
     audio.addEventListener('ended', onEnded);
+    audio.addEventListener('error', (e) => {
+  console.error('AUDIO ERROR', e);
+});
+
+audio.addEventListener('stalled', () => {
+  console.error('AUDIO STALLED');
+});
+
+audio.addEventListener('canplay', () => {
+  console.log('CAN PLAY');
+});
+
+audio.addEventListener('playing', () => {
+  console.log('PLAYING');
+});
+
+audio.addEventListener('waiting', () => {
+  console.error('AUDIO WAITING');
+});
 
     return () => {
       audio.removeEventListener('timeupdate', onTimeUpdate);
@@ -166,7 +236,6 @@ export default function useAudioPlayer(tracks, playMode = 'normal', getAudioPath
 
   return {
     track,
-    trackIndex,
     isPlaying,
     progress,
     duration,
@@ -179,5 +248,7 @@ export default function useAudioPlayer(tracks, playMode = 'normal', getAudioPath
     setVolume,
     muted,
     toggleMute,
+    setTrackIndex,
+    audioRef,
   };
 }

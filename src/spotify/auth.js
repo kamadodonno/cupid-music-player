@@ -1,12 +1,22 @@
 /**
  * Spotify OAuth 2.0 PKCE Authorization Flow
  *
- * No backend needed — the entire flow runs in the browser.
+ * No backend needed — the entire flow runs in the browser / Electron.
  * Requires VITE_SPOTIFY_CLIENT_ID to be set in your .env file.
  */
 
 const CLIENT_ID = import.meta.env.VITE_SPOTIFY_CLIENT_ID;
-const REDIRECT_URI = 'http://127.0.0.1:5173/callback';
+
+export function getRedirectUri() {
+  if (import.meta.env.VITE_SPOTIFY_REDIRECT_URI) {
+    return import.meta.env.VITE_SPOTIFY_REDIRECT_URI;
+  }
+  if (window.Android) {
+    return 'com.mehul.cupidplayer://callback';
+  }
+  return 'http://127.0.0.1:5173/callback';
+}
+
 const SCOPES = [
   'streaming',
   'user-read-email',
@@ -15,6 +25,7 @@ const SCOPES = [
   'user-modify-playback-state',
   'playlist-read-private',
   'playlist-read-collaborative',
+  'user-library-read',
 ];
 
 const TOKEN_KEY = 'spotify_token';
@@ -50,18 +61,24 @@ async function generateCodeChallenge(verifier) {
 
 /**
  * Initiate the Spotify login flow.
- * Redirects the browser to Spotify's authorize endpoint.
+ * Redirects the browser or opens Electron auth window to Spotify's authorize endpoint.
  */
 export async function login() {
+  if (!CLIENT_ID) {
+    throw new Error('Missing VITE_SPOTIFY_CLIENT_ID in .env');
+  }
+
   const verifier = generateRandomString(64);
   const challenge = await generateCodeChallenge(verifier);
 
   localStorage.setItem(CODE_VERIFIER_KEY, verifier);
 
+  const redirectUri = getRedirectUri();
+
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
     response_type: 'code',
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: redirectUri,
     scope: SCOPES.join(' '),
     code_challenge_method: 'S256',
     code_challenge: challenge,
@@ -69,7 +86,9 @@ export async function login() {
 
   const authUrl = `https://accounts.spotify.com/authorize?${params}`;
 
-  if (window.cupid?.openExternal) {
+  if (window.Android?.openSpotifyLogin) {
+    Android.openSpotifyLogin(authUrl);
+  } else if (window.cupid?.openExternal) {
     window.cupid.openExternal(authUrl);
   } else {
     window.location.href = authUrl;
@@ -82,9 +101,34 @@ export async function login() {
 let _callbackInFlight = false;
 
 export async function handleCallback() {
-  const params = new URLSearchParams(window.location.search);
-  const code = params.get('code');
-  const error = params.get('error');
+  let code = null;
+  let error = null;
+
+  if (window.Android?.getAuthRedirect) {
+    try {
+      const callbackUrl = Android.getAuthRedirect();
+      if (callbackUrl) {
+        if (callbackUrl.includes('?')) {
+          const searchParams = new URLSearchParams(callbackUrl.split('?')[1]);
+          code = searchParams.get('code');
+          error = searchParams.get('error');
+        } else if (callbackUrl.startsWith('http://') || callbackUrl.startsWith('https://')) {
+          const parsed = new URL(callbackUrl);
+          code = parsed.searchParams.get('code');
+          error = parsed.searchParams.get('error');
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading Android auth redirect:', e);
+    }
+  }
+
+  // Fallback to window.location.search (Desktop / Electron / Web)
+  if (!code && !error) {
+    const params = new URLSearchParams(window.location.search);
+    code = params.get('code');
+    error = params.get('error');
+  }
 
   if (error) {
     throw new Error(`Spotify auth error: ${error}`);
@@ -101,11 +145,13 @@ export async function handleCallback() {
       throw new Error('Missing PKCE code verifier — please try logging in again.');
     }
 
+    const redirectUri = getRedirectUri();
+
     const body = new URLSearchParams({
       client_id: CLIENT_ID,
       grant_type: 'authorization_code',
       code,
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: redirectUri,
       code_verifier: verifier,
     });
 
@@ -125,7 +171,7 @@ export async function handleCallback() {
     localStorage.removeItem(CODE_VERIFIER_KEY);
 
     // Clean the URL so the code isn't re-used
-    window.history.replaceState({}, '', '/');
+    window.history.replaceState({}, '', window.location.pathname || '/');
 
     return data.access_token;
   } finally {
@@ -134,9 +180,9 @@ export async function handleCallback() {
 }
 
 function storeTokens({ access_token, refresh_token, expires_in }) {
-  localStorage.setItem(TOKEN_KEY, access_token);
+  if (access_token) localStorage.setItem(TOKEN_KEY, access_token);
   if (refresh_token) localStorage.setItem(REFRESH_KEY, refresh_token);
-  localStorage.setItem(EXPIRY_KEY, String(Date.now() + expires_in * 1000));
+  if (expires_in) localStorage.setItem(EXPIRY_KEY, String(Date.now() + expires_in * 1000));
 }
 
 /**
@@ -159,7 +205,7 @@ export async function getAccessToken() {
   return token || null;
 }
 
-async function refreshAccessToken() {
+export async function refreshAccessToken() {
   const refreshToken = localStorage.getItem(REFRESH_KEY);
   if (!refreshToken) {
     return null;

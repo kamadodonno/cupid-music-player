@@ -1,10 +1,9 @@
 .player {
-  position: relative;
+  position: absolute;
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  border-radius: calc(5 / 306 * 100vw); /* match frame's pixel-art rounded corners */
-  clip-path: inset(0 0 0 calc(3 / 306 * 100vw));
+
   --color-title: #78364F;
   --color-primary: #5a3a4a;
   --color-secondary: #8a6a7a;
@@ -26,7 +25,7 @@
      Image size: 526/306 * 100vw = 171.9vw
      Left offset: 110/306 * 100vw = 35.95vw
      Top offset: 23/306 * 100vw = 7.52vw */
-  top: calc(-23 / 306 * 100vw); /* crop at bow top */
+  top: calc(65 / 306 * 100vw); /* crop at bow top */
   left: -35.95vw;
   width: 171.9vw;
   height: 171.9vw;
@@ -44,7 +43,7 @@
 .window-title {
   position: absolute;
   left: calc((134 - 110) / 306 * 100vw);
-  top: calc((50 - 23) / 306 * 100vw);
+  top: calc((135 - 23) / 306 * 100vw);
   font-family: 'Rainyhearts', monospace;
   font-size: calc(20 / 306 * 100vw);
   color: var(--color-title);
@@ -89,38 +88,19 @@
   -webkit-app-region: no-drag;
 }
 
-.btn-minimize {
-
-  left: calc((331 - 110) / 306 * 100vw);
-  top: calc((48 - 23) / 306 * 100vw);
-}
-
-.btn-window {
-
-  left: calc((355 - 110) / 306 * 100vw);
-  top: calc((48 - 23) / 306 * 100vw);
-  width: calc(19 / 306 * 100vw);
-}
-
-.btn-exit {
-
-  left: calc((378 - 110) / 306 * 100vw);
-  top: calc((48 - 23) / 306 * 100vw);
-}
-
 .settings-layer {
   transform: scale(0.85);
-  transform-origin: calc(310 / 512 * 100%) calc(57 / 512 * 100%);
+  transform-origin: calc(290 / 200 * 100%) calc(57 / 512 * 100%);
 }
 
 .btn-settings {
-  left: calc((305 - 110) / 306 * 100vw);
-  top: calc((48 - 23) / 306 * 100vw);
+  left: calc((375 - 110) / 306 * 100vw);
+  top: calc((136 - 23) / 306 * 100vw);
 }
 
 .settings-panel {
   position: absolute;
-  top: calc((70 - 23) / 306 * 100vw);
+  top: calc((160 - 23) / 306 * 100vw);
   right: calc(5 / 306 * 100vw);
   z-index: 300;
   -webkit-app-region: no-drag;
@@ -301,7 +281,7 @@
 .volume-hover-zone {
   position: absolute;
   left: calc((363 - 110) / 306 * 100vw);
-  bottom: calc((512 - 412 - 23) / 306 * 100vw);
+  bottom: calc((611 - 412 - 23) / 306 * 100vw);
   width: calc(20 / 306 * 100vw);
   height: calc(18 / 306 * 100vw);
   z-index: 155;
@@ -338,7 +318,7 @@
 .btn-playmode {
   position: absolute;
   left: calc((139 - 110) / 306 * 100vw);
-  top: calc((425 - 23) / 306 * 100vw);
+  top: calc((512 - 23) / 306 * 100vw);
   width: calc(25 / 306 * 100vw);
   height: calc(20 / 306 * 100vw);
   z-index: 150;
@@ -371,7 +351,7 @@
 .progress-seek {
   position: absolute;
   left: calc((140 - 110) / 306 * 100vw);
-  top: calc((469 - 23) / 306 * 100vw);
+  top: calc((557.3 - 23) / 306 * 100vw);
   width: calc(241 / 306 * 100vw);
   height: calc(6 / 306 * 100vw);
   z-index: 150;
@@ -383,21 +363,21 @@
 /* Playback control click targets */
 .btn-prev {
   left: calc((172 - 110) / 306 * 100vw);
-  top: calc((418 - 23) / 306 * 100vw);
+  top: calc((507 - 23) / 306 * 100vw);
   width: calc(44 / 306 * 100vw);
   height: calc(31 / 306 * 100vw);
 }
 
 .btn-play {
   left: calc((240 - 110) / 306 * 100vw);
-  top: calc((418 - 23) / 306 * 100vw);
+  top: calc((507 - 23) / 306 * 100vw);
   width: calc(44 / 306 * 100vw);
   height: calc(31 / 306 * 100vw);
 }
 
 .btn-next {
   left: calc((310 - 110) / 306 * 100vw);
-  top: calc((418 - 23) / 306 * 100vw);
+  top: calc((507 - 23) / 306 * 100vw);
   width: calc(44 / 306 * 100vw);
   height: calc(31 / 306 * 100vw);
 }
@@ -406,7 +386,7 @@
 .now-playing {
   position: absolute;
   left: calc((195 - 110) / 306 * 100vw);
-  top: calc((355 - 23) / 306 * 100vw);
+  top: calc((448 - 23) / 306 * 100vw);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -418,7 +398,7 @@
   position: absolute;
   width: calc(200 / 306 * 100vw);
   left: 50%;
-  top: calc(120 / 306 * 100vw);
+  top: calc(207 / 306 * 100vw);
   transform: translateX(-50%);
   image-rendering: pixelated;
   pointer-events: none;
@@ -454,14 +434,14 @@
 
 .album-frame-layer {
   left: calc(-35.95vw - 1 / 306 * 100vw);
-  top: calc(-23 / 306 * 100vw);
+  top: calc(72 / 306 * 100vw);
   z-index: 45;
 }
 
 .album-mask {
   position: absolute;
   left: calc((146 - 110) / 306 * 100vw);
-  top: calc((356 - 23) / 306 * 100vw);
+  top: calc((452 - 23) / 306 * 100vw);
   width: calc(42 / 306 * 100vw);
   height: calc(42 / 306 * 100vw);
   clip-path: url(#album-mask);
@@ -532,7 +512,7 @@
 .time-display {
   position: absolute;
   left: calc((136 - 110) / 306 * 100vw);
-  top: calc((479 - 23) / 306 * 100vw);
+  top: calc((568.5 - 23) / 306 * 100vw);
   width: calc((382 - 136) / 306 * 100vw);
   display: flex;
   justify-content: space-between;
@@ -674,4 +654,179 @@
   font-size: calc(9 / 306 * 100vw);
   color: #c44;
   word-break: break-word;
+}
+
+.btn-library {
+  position: absolute;
+
+  width: 42px;
+  height: 42px;
+
+  bottom: 81%;
+  right: 13%;
+
+  z-index: 1000;
+
+  border-radius: 50%;
+
+  background: rgba(255, 200, 220, 0.01);
+}
+
+.library-song-list {
+  position: absolute;
+
+  top: 21%;
+  left: 8%;
+
+  width: 83%;
+  height: 62%;
+
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 12px;
+
+  padding-right: 6px;
+
+  z-index: 50;
+
+  scrollbar-width: none;
+
+  box-sizing: border-box;
+
+  max-height: 74%;
+
+  min-height: 0;
+}
+
+.library-song-list::-webkit-scrollbar {
+  display: none;
+}
+
+.library-song-item {
+  display: flex;
+
+  align-items: center;
+
+  gap: 12px;
+
+  padding: 10px;
+
+  border-radius: 12px;
+
+  background: rgba(255,255,255,0.06);
+
+  backdrop-filter: blur(4px);
+
+  cursor: pointer;
+
+  flex-shrink: 0;
+
+  min-height: 60px;
+
+  box-sizing: border-box;
+}
+
+.library-song-art {
+  width: 60px;
+  height: 60px;
+
+  border-radius: 10px;
+
+  object-fit: cover;
+
+  flex-shrink: 0;
+}
+
+.library-song-info {
+  display: flex;
+  flex-direction: column;
+
+  overflow: hidden;
+}
+
+.library-song-title {
+  color: white;
+
+  font-size: 14px;
+  font-weight: 600;
+
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.library-song-artist {
+  color: rgba(255,255,255,0.6);
+
+  font-size: 12px;
+
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn-library-back {
+  position: absolute;
+
+  top: 8%;
+  left: 10%;
+
+  width: 40px;
+  height: 40px;
+
+  z-index: 100;
+
+  background: rgba(255,0,0,0.2);
+}
+
+.loading-screen {
+  position: absolute;
+  inset: 0;
+
+  z-index: 999999;
+
+  background: rgba(0,0,0,0.92);
+
+  display: flex;
+  flex-direction: column;
+
+  align-items: center;
+  justify-content: center;
+
+  gap: 20px;
+}
+
+.loading-record {
+  width: 120px;
+
+  animation: spinRecord 2s linear infinite;
+}
+
+.loading-text {
+  color: white;
+
+  font-size: 14px;
+
+  letter-spacing: 2px;
+
+  opacity: 0.8;
+}
+
+@keyframes spinRecord {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.library-layer {
+  transform: scale(0.80);
+  transform-origin: calc(-207 / 200 * 100%) calc(-155 / 200 * 100%);
 }

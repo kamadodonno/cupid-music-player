@@ -1,12 +1,12 @@
 /**
  * Spotify Web API helpers
  *
- * Fetches playlist data and normalises track objects into a shape
+ * Fetches playlist and liked songs data and normalises track objects into a shape
  * compatible with the local playlist format:
  *   { title, artist, art, uri }
  */
 
-import { getAccessToken } from './auth.js';
+import { getAccessToken, refreshAccessToken } from './auth.js';
 
 const API_BASE = 'https://api.spotify.com/v1';
 
@@ -17,6 +17,26 @@ async function fetchWithRetry(url, options, retries = 3) {
     if (i < retries) await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
   }
   return fetch(url, options);
+}
+
+/**
+ * Fetch wrapper that attaches the Bearer token and retries on 401 with refreshed token.
+ */
+async function fetchWithAuth(url, options = {}) {
+  let token = await getAccessToken();
+  if (!token) throw new Error('Not authenticated with Spotify');
+
+  let headers = { ...options.headers, Authorization: `Bearer ${token}` };
+  let res = await fetchWithRetry(url, { ...options, headers });
+
+  if (res.status === 401) {
+    token = await refreshAccessToken();
+    if (token) {
+      headers = { ...options.headers, Authorization: `Bearer ${token}` };
+      res = await fetchWithRetry(url, { ...options, headers });
+    }
+  }
+  return res;
 }
 
 /**
@@ -57,18 +77,57 @@ export function parsePlaylistUrl(input) {
 }
 
 /**
- * Fetch all tracks from a Spotify playlist (handles pagination).
+ * Fetch all tracks from the user's Liked Songs (Saved Tracks).
+ *
+ * @returns {Promise<Array<{ title: string, artist: string, art: string, uri: string }>>}
+ */
+export async function fetchLikedSongs() {
+  const tracks = [];
+  let url = `${API_BASE}/me/tracks?limit=50`;
+
+  while (url) {
+    const res = await fetchWithAuth(url);
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Spotify API error ${res.status}: ${text}`);
+    }
+
+    const data = await res.json();
+    const items = data.items || [];
+
+    for (const entry of items) {
+      const t = entry.track || entry.item;
+      if (!t || !t.uri) continue;
+
+      tracks.push({
+        title: t.name,
+        artist: (t.artists || []).map((a) => a.name).join(', '),
+        art: t.album?.images?.[0]?.url ?? null,
+        uri: t.uri,
+      });
+    }
+
+    url = data.next;
+    // Cap at 500 tracks to avoid excessive API requests
+    if (tracks.length >= 500) break;
+  }
+
+  return tracks;
+}
+
+/**
+ * Fetch all tracks from a Spotify playlist or liked songs (handles pagination).
  *
  * @param {string} playlistId
  * @returns {Promise<Array<{ title: string, artist: string, art: string, uri: string }>>}
  */
 export async function fetchPlaylistTracks(playlistId) {
-  const token = await getAccessToken();
-  if (!token) throw new Error('Not authenticated with Spotify');
+  if (playlistId === 'liked-songs' || playlistId === 'liked') {
+    return fetchLikedSongs();
+  }
 
-  const res = await fetchWithRetry(`${API_BASE}/playlists/${playlistId}?market=from_token`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const res = await fetchWithAuth(`${API_BASE}/playlists/${playlistId}?market=from_token`);
 
   if (!res.ok) {
     const text = await res.text();
@@ -78,32 +137,48 @@ export async function fetchPlaylistTracks(playlistId) {
   const data = await res.json();
   const tracks = [];
 
-  // The full playlist response nests tracks under `items` or `tracks`
   const container = data.tracks || data.items;
   const items = container?.items || [];
 
   for (const entry of items) {
-    // Track data may be under `track` or `item` depending on API version
     const t = entry.track || entry.item;
     if (!t || !t.uri) continue;
 
     tracks.push({
       title: t.name,
-      artist: t.artists.map((a) => a.name).join(', '),
+      artist: (t.artists || []).map((a) => a.name).join(', '),
       art: t.album?.images?.[0]?.url ?? null,
       uri: t.uri,
     });
   }
 
-  // Fill in missing album art via search (local files, etc.)
+  // Handle playlist pagination if more than 100 tracks
+  let nextUrl = container?.next;
+  while (nextUrl && tracks.length < 500) {
+    const nextRes = await fetchWithAuth(nextUrl);
+    if (!nextRes.ok) break;
+    const nextData = await nextRes.json();
+    for (const entry of nextData.items || []) {
+      const t = entry.track || entry.item;
+      if (!t || !t.uri) continue;
+      tracks.push({
+        title: t.name,
+        artist: (t.artists || []).map((a) => a.name).join(', '),
+        art: t.album?.images?.[0]?.url ?? null,
+        uri: t.uri,
+      });
+    }
+    nextUrl = nextData.next;
+  }
+
+  // Fill in missing album art via search if any
   const missing = tracks.filter((t) => !t.art);
   if (missing.length > 0) {
-    await Promise.all(missing.map(async (t) => {
+    await Promise.all(missing.slice(0, 20).map(async (t) => {
       try {
         const q = encodeURIComponent(`${t.title} ${t.artist}`);
-        const searchRes = await fetchWithRetry(
-          `${API_BASE}/search?q=${q}&type=track&limit=1&market=from_token`,
-          { headers: { Authorization: `Bearer ${token}` } },
+        const searchRes = await fetchWithAuth(
+          `${API_BASE}/search?q=${q}&type=track&limit=1&market=from_token`
         );
         if (searchRes.ok) {
           const searchData = await searchRes.json();
@@ -122,21 +197,34 @@ export async function fetchPlaylistTracks(playlistId) {
 }
 
 /**
- * Fetch the current user's playlists.
+ * Fetch the current user's playlists and liked songs count.
  *
  * @returns {Promise<Array<{ id: string, name: string, image: string|null, trackCount: number }>>}
  */
 export async function fetchMyPlaylists() {
-  const token = await getAccessToken();
-  if (!token) throw new Error('Not authenticated with Spotify');
-
   const playlists = [];
+
+  // Fetch Liked Songs count and add to the top
+  try {
+    const likedRes = await fetchWithAuth(`${API_BASE}/me/tracks?limit=1`);
+    if (likedRes.ok) {
+      const likedData = await likedRes.json();
+      const firstTrackArt = likedData.items?.[0]?.track?.album?.images?.[0]?.url ?? null;
+      playlists.push({
+        id: 'liked-songs',
+        name: 'Liked Songs ♥',
+        image: firstTrackArt,
+        trackCount: likedData.total ?? 0,
+      });
+    }
+  } catch (err) {
+    console.warn('[Spotify] Could not fetch liked songs count:', err.message);
+  }
+
   let url = `${API_BASE}/me/playlists?limit=50`;
 
   while (url) {
-    const res = await fetchWithRetry(url, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await fetchWithAuth(url);
 
     if (!res.ok) {
       const text = await res.text();
@@ -144,7 +232,7 @@ export async function fetchMyPlaylists() {
     }
 
     const data = await res.json();
-    for (const p of data.items) {
+    for (const p of data.items || []) {
       playlists.push({
         id: p.id,
         name: p.name,
@@ -165,12 +253,15 @@ export async function fetchMyPlaylists() {
  * @returns {Promise<{ name: string, image: string|null }>}
  */
 export async function fetchPlaylistInfo(playlistId) {
-  const token = await getAccessToken();
-  if (!token) throw new Error('Not authenticated with Spotify');
+  if (playlistId === 'liked-songs' || playlistId === 'liked') {
+    return {
+      name: 'Liked Songs ♥',
+      image: null,
+    };
+  }
 
-  const res = await fetchWithRetry(
-    `${API_BASE}/playlists/${playlistId}?fields=name,images`,
-    { headers: { Authorization: `Bearer ${token}` } },
+  const res = await fetchWithAuth(
+    `${API_BASE}/playlists/${playlistId}?fields=name,images`
   );
 
   if (!res.ok) {

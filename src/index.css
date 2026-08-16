@@ -10,15 +10,29 @@
   color-scheme: dark;
 }
 
-html,
-body,
-#root {
+html, body, #root {
   margin: 0;
   padding: 0;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
-  background: transparent;
+  touch-action: manipulation;
+  background: #1a1518;
 }
-
 * {
   box-sizing: border-box;
+}
+
+#splash-screen {
+  position: fixed;
+  inset: 0;
+  background: #1a1518;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+}
+
+#splash-screen img {
+  width: 220px;
 }

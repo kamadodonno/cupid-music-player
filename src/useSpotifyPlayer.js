@@ -17,13 +17,15 @@ export default function useSpotifyPlayer(tracks, playMode = 'normal') {
   const nextIdxRef = useRef(null);
   const [trackIndex, setTrackIndex] = useState(0);
 
-  // Reset to track 0 on playlist change, otherwise the stale index can be
-  // out of bounds for the new playlist
+  // Reset to track 0 and start playing on playlist change
   const prevTracksRef = useRef(tracks);
   if (prevTracksRef.current !== tracks) {
     prevTracksRef.current = tracks;
     nextIdxRef.current = null;
     setTrackIndex(0);
+    if (tracks.length > 0) {
+      setIsPlaying(true);
+    }
   }
   const [isPlaying, setIsPlaying] = useState(false);
   // Ref so the async load effect sees the latest value when it resolves,
@@ -63,13 +65,14 @@ export default function useSpotifyPlayer(tracks, playMode = 'normal') {
     async function loadStream() {
       try {
         const url = t.videoId
-          ? await window.cupid.getStreamUrlById(t.videoId)
-          : await window.cupid.getStreamUrl(t.title, t.artist);
+          ? await window.cupid?.getStreamUrlById(t.videoId)
+          : await window.cupid?.getStreamUrl(t.title, t.artist);
         if (cancelled) return;
-        // setting src triggers loading; an explicit audio.load() would reset it
-        audio.src = url;
-        if (isPlayingRef.current) {
-          audio.play().catch(() => {});
+        if (url) {
+          audio.src = url;
+          if (isPlayingRef.current) {
+            audio.play().catch(() => {});
+          }
         }
       } catch (err) {
         console.error('Failed to get stream:', err.message);
@@ -97,9 +100,9 @@ export default function useSpotifyPlayer(tracks, playMode = 'normal') {
       if (!t) return;
       prefetched.add(idx);
       if (t.videoId) {
-        window.cupid.getStreamUrlById(t.videoId).catch(() => {});
+        window.cupid?.getStreamUrlById(t.videoId).catch(() => {});
       } else {
-        window.cupid.getStreamUrl(t.title, t.artist).catch(() => {});
+        window.cupid?.getStreamUrl(t.title, t.artist).catch(() => {});
       }
     };
 
@@ -167,15 +170,23 @@ export default function useSpotifyPlayer(tracks, playMode = 'normal') {
 
   // ── Playback controls ────────────────────────────────────
 
+  const play = useCallback(() => {
+    audio.play().catch(() => {});
+    setIsPlaying(true);
+  }, []);
+
+  const pause = useCallback(() => {
+    audio.pause();
+    setIsPlaying(false);
+  }, []);
+
   const togglePlay = useCallback(() => {
     if (isPlaying) {
-      audio.pause();
-      setIsPlaying(false);
+      pause();
     } else {
-      audio.play().catch(() => {});
-      setIsPlaying(true);
+      play();
     }
-  }, [isPlaying]);
+  }, [isPlaying, play, pause]);
 
   const next = useCallback(() => {
     setTrackIndex((prev) => {
@@ -230,6 +241,8 @@ export default function useSpotifyPlayer(tracks, playMode = 'normal') {
     progress,
     duration,
     currentTime,
+    play,
+    pause,
     togglePlay,
     next,
     prev,
@@ -239,5 +252,7 @@ export default function useSpotifyPlayer(tracks, playMode = 'normal') {
     muted,
     toggleMute,
     loading,
+    setTrackIndex,
+    audioRef,
   };
 }

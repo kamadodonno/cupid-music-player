@@ -8,3 +8,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <App />
   </React.StrictMode>
 );
+
+const splash = document.getElementById('splash-screen');
+
+if (splash) {
+  splash.remove();
+}

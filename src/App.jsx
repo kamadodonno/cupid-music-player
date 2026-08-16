@@ -1,9 +1,14 @@
 import { useCallback, useRef, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import './App.css';
+import pinkCover from './assets/pink_cover.webp';
+import blueCover from './assets/blue_cover.webp';
 import useAudioPlayer from './useAudioPlayer';
 import useSpotifyPlayer from './useSpotifyPlayer';
 import useTheme from './useTheme';
+import pinkLibraryFrame from './assets/pink/library_frame.webp';
+import blueLibraryFrame from './assets/blue/library_frame.webp';
+import { getAndroidSongs, loadSavedSongs } from './androidMusic';
 import { login as spotifyLogin, handleCallback, isLoggedIn as isSpotifyLoggedIn, logout as spotifyLogout } from './spotify/auth.js';
 import { fetchPlaylistTracks as fetchSpotifyTracks, fetchMyPlaylists as fetchSpotifyPlaylists } from './spotify/api.js';
 import { login as appleLogin, logout as appleLogout, isLoggedIn as isAppleLoggedIn, initMusicKit } from './apple/auth.js';
@@ -22,9 +27,9 @@ import {
   fetchPlaylistTracks as fetchYouTubeTracks,
 } from './youtube/api.js';
 
-import progressBarStars from '../assets/progress_bar_stars.png';
-import star from '../assets/star.png';
-import starSelected from '../assets/star_selected.png';
+import progressBarStars from './assets/progress_bar_stars.webp';
+import star from './assets/star.webp';
+import starSelected from './assets/star_selected.webp';
 
 function useResize(corner) {
   const onMouseDown = useCallback((e) => {
@@ -188,12 +193,16 @@ function MarqueeText({ className, text }) {
 }
 
 export default function App() {
+
+
   // ── Source state ─────────────────────────────────────────
   const [source, setSource] = useState('local'); // 'local' | 'streaming'
+  const [currentArt, setCurrentArt] = useState("");
   const [spotifyConnected, setSpotifyConnected] = useState(isSpotifyLoggedIn());
   const [appleConnected, setAppleConnected] = useState(isAppleLoggedIn());
   const [youtubeConnected, setYoutubeConnected] = useState(isYouTubeLoggedIn());
   const [youtubeLoggingIn, setYoutubeLoggingIn] = useState(false);
+  const [screen, setScreen] = useState('player');
   const [youtubeUrlInput, setYoutubeUrlInput] = useState('');
   const [streamTracks, setStreamTracks] = useState([]);
   const [spotifyPlaylists, setSpotifyPlaylists] = useState([]);
@@ -218,37 +227,97 @@ export default function App() {
   const [showDebug] = useState(false);
   const [localTracks, setLocalTracks] = useState([]);
 
-  const loadLocalPlaylist = useCallback(async () => {
-    if (!window.cupid?.getLocalPlaylist) return;
-    try {
-      const tracks = await window.cupid.getLocalPlaylist();
-      setLocalTracks(Array.isArray(tracks) ? tracks : []);
-    } catch (err) {
-      console.error('Failed to load local playlist:', err);
-    }
-  }, []);
+const loadLocalPlaylist = useCallback(async () => {
+
+  // Load cached songs instantly
+  let tracks = await loadSavedSongs();
+
+  if (tracks && tracks.length > 0) {
+    setLocalTracks(tracks);
+  }
+
+  // Refresh library in background
+  const freshTracks = await getAndroidSongs();
+
+  if (freshTracks && freshTracks.length > 0) {
+    setLocalTracks(freshTracks);
+  }
+
+}, []);
+
 
   useEffect(() => { loadLocalPlaylist(); }, [loadLocalPlaylist]);
 
-  const local = useAudioPlayer(localTracks, playMode, window.cupid?.getLocalAudioPath);
+  const local = useAudioPlayer(localTracks, playMode);
   const streaming = useSpotifyPlayer(streamTracks, playMode);
   const player = source === 'streaming' ? streaming : local;
 
   const {
-    track,
-    isPlaying,
-    progress,
-    duration,
-    currentTime,
-    togglePlay,
-    next,
-    prev,
-    seek,
-    volume,
-    setVolume,
-    muted,
-    toggleMute,
-  } = player;
+  track,
+  isPlaying,
+  progress,
+  duration,
+  currentTime,
+  togglePlay,
+  next,
+  prev,
+  seek,
+  volume,
+  setVolume,
+  muted,
+  toggleMute,
+  setTrackIndex,
+  audioRef,
+} = player;
+
+useEffect(() => {
+
+  if (!track?.file || !window.Android) {
+    setCurrentArt("");
+    return;
+  }
+
+  try {
+
+    const art = Android.getArtwork(track.file);
+
+    if (art) {
+      setCurrentArt(`data:image/jpeg;base64,${art}`);
+    } else {
+      setCurrentArt("");
+    }
+
+  } catch {
+    setCurrentArt("");
+  }
+
+}, [track]);
+
+useEffect(() => {
+
+  window.cupidTogglePlay = () => {
+    togglePlay();
+  };
+
+  window.cupidNext = () => {
+    next();
+  };
+
+  window.cupidPrev = () => {
+    prev();
+  };
+
+  return () => {
+    delete window.cupidTogglePlay;
+    delete window.cupidNext;
+    delete window.cupidPrev;
+  };
+
+}, [togglePlay, next, prev]);
+
+window.testCupid = () => {
+  alert("Cupid bridge works");
+};
 
   const cyclePlayMode = useCallback(() => {
     setPlayMode((m) => m === 'normal' ? 'shuffle' : m === 'shuffle' ? 'repeat' : 'normal');
@@ -312,24 +381,47 @@ export default function App() {
   // ── Handle Spotify OAuth callback on mount ─────────────
   useEffect(() => {
     async function checkCallback() {
-      const params = new URLSearchParams(window.location.search);
-      if (params.has('code')) {
+      let hasSpotifyCode = false;
+
+      if (window.Android?.getAuthRedirect) {
+        const redirect = Android.getAuthRedirect();
+        if (redirect && redirect.includes("code=")) {
+          hasSpotifyCode = true;
+        }
+      } else {
+        const params = new URLSearchParams(window.location.search);
+        hasSpotifyCode = params.has("code");
+      }
+
+      if (hasSpotifyCode) {
         try {
           await handleCallback();
           setSpotifyConnected(true);
-          // Small delay to let token settle before fetching
-          setTimeout(() => loadSpotifyPlaylists(true), 500);
+          if (musicService === 'spotify') {
+            loadSpotifyPlaylists(true);
+          }
         } catch (err) {
+          console.error(err);
           setSettingsError(err.message);
         }
-      } else {
-        if (isSpotifyLoggedIn()) loadSpotifyPlaylists(true);
-        if (isAppleLoggedIn()) loadApplePlaylists(true);
-        if (isYouTubeLoggedIn()) loadYoutubePlaylists(true);
+        return;
+      }
+
+      if (musicService === 'spotify' && isSpotifyLoggedIn()) {
+        loadSpotifyPlaylists(true);
+      }
+
+      if (musicService === 'apple' && isAppleLoggedIn()) {
+        loadApplePlaylists(true);
+      }
+
+      if (musicService === 'youtube' && isYouTubeLoggedIn()) {
+        loadYoutubePlaylists(true);
       }
     }
+
     checkCallback();
-  }, []);
+  }, [musicService, loadSpotifyPlaylists, loadApplePlaylists, loadYoutubePlaylists]);
 
   // ── Load a playlist by ID (works for all services) ────
   const loadPlaylist = useCallback(async (id, service) => {
@@ -348,6 +440,7 @@ export default function App() {
       }
       setStreamTracks(tracks);
       setSource('streaming');
+      setShowSettings(false);
     } catch (err) {
       setSettingsError(err.message);
     } finally {
@@ -356,7 +449,7 @@ export default function App() {
   }, []);
 
   const { theme, toggleTheme, assets } = useTheme();
-
+  if (!assets) return null;
   const [recordFrame, setRecordFrame] = useState(0);
   const [needleFrame, setNeedleFrame] = useState(0);
   const [isPink, setIsPink] = useState(theme === 'pink');
@@ -468,30 +561,36 @@ export default function App() {
 
   return (
     <div className={`player ${theme === 'blue' ? 'theme-blue' : ''}`}>
+
+
       {/* Base frame */}
-      <img src={assets.frame} className="layer" alt="" draggable={false} />
+      <img
+  src={screen === 'library' ? assets.libraryFrame : assets.frame}
+  className="layer"
+  alt=""
+  draggable={false}
+/>
 
       {/* Window title */}
       <div className="window-title">cupid player</div>
 
+      {screen !== 'library' && (
+<>
       {/* Record player centered in frame */}
       <img src={assets.recordPlayer} className="record-player" alt="" draggable={false} />
-      <img
-        src={currentFrames[recordFrame]}
+      <img src={currentFrames[recordFrame]}
         className={`record-player ${swapping ? 'record-slide-out' : ''}`}
         alt=""
         draggable={false}
       />
       {swapping && (
-        <img
-          src={incomingFrames[0]}
+        <img src={incomingFrames[0]}
           className="record-player record-slide-in"
           alt=""
           draggable={false}
         />
       )}
-      <img
-        src={needleLifted ? assets.needleChangeFrames[needleChangeFrame] : assets.needlePlayFrames[needleFrame]}
+      <img src={needleLifted ? assets.needleChangeFrames[needleChangeFrame] : assets.needlePlayFrames[needleFrame]}
         className="record-player"
         alt=""
         draggable={false}
@@ -547,10 +646,7 @@ export default function App() {
         style={{ opacity: playMode === 'normal' ? 0.4 : 0.8 }}
       />
 
-      {/* Window control layers (visual only) */}
-      <img src={assets.minimizerButton} className="layer layer-ui" alt="" draggable={false} />
-      <img src={assets.windowButton} className="layer layer-ui" alt="" draggable={false} />
-      <img src={assets.exitButton} className="layer layer-ui" alt="" draggable={false} />
+  
 
       {/* Settings button layer */}
       <img src={assets.settings} className="layer layer-ui settings-layer" alt="" draggable={false} />
@@ -572,11 +668,14 @@ export default function App() {
       </svg>
 
       {/* Album art clipped to pixel mask */}
-      {track.art && (
-        <div className="album-mask">
-          <img src={track.art} className="album-art" alt="" draggable={false} />
-        </div>
-      )}
+      <div className="album-mask">
+        <img
+            src={currentArt || track?.art || (theme === 'blue' ? blueCover : pinkCover)}
+            className="album-art"
+            alt=""
+            draggable={false}
+        />
+      </div>
 
       {/* Album frame overlay */}
       <img src={assets.albumFrame} className="layer album-frame-layer" alt="" draggable={false} />
@@ -623,37 +722,50 @@ export default function App() {
         }}
       />
 
+      </>
+)}
       {/* Playback control click targets */}
-      <div className="btn btn-prev" onClick={prev} />
-      <div className="btn btn-play" onClick={togglePlay} />
-      <div className="btn btn-next" onClick={next} />
+      {screen !== 'library' && (
+<>
+        <div className="btn btn-prev" onClick={prev} />
+        <div className="btn btn-play" onClick={togglePlay} />
+        <div className="btn btn-next" onClick={next} />
 
       {/* Volume bar layers — shown on hover or drag */}
       {(volumeHovered || volumeDragging) && (
         <>
-          <img src={assets.volumeBarLow} className="layer layer-ui volume-bar-layer" alt="" draggable={false} />
-          <img
-            src={assets.volumeBarHigh}
-            className="layer layer-ui volume-bar-layer"
-            alt=""
-            draggable={false}
-            style={{
-              clipPath: `inset(${((1 - (muted ? 0 : volume)) * (420 - 338) / 512 + 338 / 512) * 100}% 0 0 0)`,
-            }}
-          />
+        <img
+          src={assets.volumeBarLow}
+          className="layer layer-ui volume-bar-layer"
+          alt=""
+          draggable={false}
+        />
+
+        <img
+          src={assets.volumeBarHigh}
+          className="layer layer-ui volume-bar-layer"
+          alt=""
+          draggable={false}
+          style={{
+            clipPath: `inset(${((1 - (muted ? 0 : volume)) * (420 - 338) / 512 + 338 / 512) * 100}% 0 0 0)`,
+          }}
+        />
         </>
       )}
 
       {/* Volume icon — hover to reveal bar */}
       <div
         className={`volume-hover-zone ${(volumeHovered || volumeDragging) ? 'expanded' : ''}`}
-        onMouseLeave={() => { if (!volumeDragging) setVolumeHovered(false); }}
+        onMouseLeave={() => {
+          if (!volumeDragging) setVolumeHovered(false);
+        }}
       >
         <div
           className="btn-volume-icon"
           onClick={toggleMute}
           onMouseEnter={() => setVolumeHovered(true)}
         />
+
         {(volumeHovered || volumeDragging) && (
           <div
             className="volume-bar-area"
@@ -661,8 +773,17 @@ export default function App() {
             onMouseDown={(e) => {
               e.preventDefault();
               setVolumeDragging(true);
+
               const rect = e.currentTarget.getBoundingClientRect();
-              const pct = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height));
+
+              const pct = Math.max(
+                0,
+                Math.min(
+                  1,
+                  1 - (e.clientY - rect.top) / rect.height
+                )
+              );
+
               setVolume(pct);
             }}
           />
@@ -670,17 +791,19 @@ export default function App() {
       </div>
 
       {/* Shuffle/repeat click target */}
-      <div className="btn btn-playmode" onClick={cyclePlayMode} title={playMode} />
-
-      {/* Window control click targets */}
-      <div className="btn btn-minimize" onClick={() => window.cupid?.minimize()} />
-      <div className="btn btn-window" onClick={() => window.cupid?.maximize()} />
-      <div className="btn btn-exit" onClick={() => window.cupid?.close()} />
+      <div
+        className="btn btn-playmode"
+        onClick={cyclePlayMode}
+        title={playMode}
+      />
 
       {/* Settings button */}
-      <div className="btn btn-settings" onClick={() => setShowSettings((v) => !v)} />
+      <div
+        className="btn btn-settings"
+        onClick={() => setShowSettings((v) => !v)}
+      />
 
-      {/* Debug overlays — toggle with showDebug state */}
+      {/* Debug overlays */}
       {showDebug && (
         <>
           <div className="debug-overlay btn btn-prev" />
@@ -692,7 +815,25 @@ export default function App() {
         </>
       )}
 
-      {/* Settings panel */}
+    </>
+          )}
+
+    {/* Library button */}
+    <div
+  className="btn-library"
+  onClick={() =>
+    setScreen(screen === 'library' ? 'player' : 'library')
+  }
+>
+  <img
+  src={assets.libraryButton}
+  className="layer layer-ui library-layer"
+  alt=""
+  draggable={false}
+/>
+</div>
+
+    {/* Settings panel */}
       {showSettings && (
         <div className="settings-panel">
           <div className="settings-panel-inner">
@@ -889,6 +1030,45 @@ export default function App() {
 
             {settingsError && <div className="settings-error">{settingsError}</div>}
           </div>
+        </div>
+      )}
+      {screen === 'library' && (
+        <div className="library-song-list">
+          {(source === 'streaming' ? streamTracks : localTracks).map((item, index) => (
+            <div
+              key={index}
+              className="library-song-item"
+              onClick={() => {
+                setTrackIndex(index);
+                if (source === 'local') {
+                  setTimeout(() => {
+                    audioRef.current?.play?.();
+                  }, 100);
+                }
+                setScreen('player');
+              }}
+            >
+              <img
+                src={item.art || (theme === 'blue' ? blueCover : pinkCover)}
+                style={{
+                  width: "60px",
+                  height: "60px",
+                  borderRadius: "10px",
+                  objectFit: "cover",
+                  zIndex: 9999
+                }}
+                alt=""
+              />
+              <div className="library-song-info">
+                <div className="library-song-title">
+                  {item.title}
+                </div>
+                <div className="library-song-artist">
+                  {item.artist}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
